@@ -1,0 +1,63 @@
+###########
+# BUILDER #
+###########
+
+# pull official base image
+FROM python:3.9.15-slim-bullseye as builder
+
+# set work directory
+WORKDIR /usr/src/app
+
+# set virtual enviroment
+ENV VIRTUAL_ENV=/opt/venv
+RUN python -m venv $VIRTUAL_ENV
+ENV PATH="$VIRTUAL_ENV/bin:$PATH"
+
+# set environment variables
+ENV PYTHONDONTWRITEBYTECODE 1
+ENV PYTHONUNBUFFERED 1
+
+# install dependencies
+COPY ./requirements.txt .
+RUN	pip install --upgrade pip \
+	pip install -r requirements.txt --no-cache-dir
+
+###########
+# RELEASE #
+###########
+
+# pull official base image
+FROM python:3.9.15-slim-bullseye
+
+# create the app user
+RUN groupadd -g 61000 app \
+	&& useradd -g 61000 -l -m -s /bin/false -u 61000 app
+
+# create the appropriate directories
+ENV HOME=/home/app
+ENV APP_HOME=/home/app/web
+RUN mkdir $APP_HOME
+RUN mkdir $APP_HOME/staticfiles
+WORKDIR $APP_HOME
+
+# install dependencies
+COPY --from=builder /opt/venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# copy entrypoint.sh
+COPY ./entrypoint.sh .
+RUN apt-get update && apt-get install -y netcat
+RUN	sed -i 's/\r$//g' $APP_HOME/entrypoint.sh
+RUN chmod +x $APP_HOME/entrypoint.sh
+
+# copy project
+COPY . .
+
+# chown all the files to the app user
+RUN chown -R app:app $APP_HOME
+
+# change to the app user
+USER app
+
+# run entrypoint.sh
+ENTRYPOINT ["/home/app/web/entrypoint.sh"]
